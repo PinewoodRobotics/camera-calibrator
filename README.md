@@ -1,4 +1,4 @@
-# Camera Calibrator
+# Cowlibration: Camera
 Calibrate camera intrinsics
 
 ## Usage
