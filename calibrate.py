@@ -1,22 +1,27 @@
-import sys
+import argparse
 import json
 
 import cv2 as cv
 import numpy as np
 
-GRID_WIDTH = 11
-GRID_HEIGHT = 8
+# Parse CLI arguments
+arg_parser = argparse.ArgumentParser(prog="calibrate")
+arg_parser.add_argument("input_video", help="path to input video")
+arg_parser.add_argument("output_camera_model", help="path to camera model")
+arg_parser.add_argument("--square", help="width of square in inches", type=float)
+arg_parser.add_argument("--marker", help="width of marker in inches", type=float)
+arg_parser.add_argument("--width", help="width of board", type=int)
+arg_parser.add_argument("--height", help="height of board", type=int)
 
-SQUARE_WIDTH_M = 0.018
-MARKER_WIDTH_M = 0.014
+args = arg_parser.parse_args()
 
 # Aruco Board
 aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_5X5_1000)
-charuco_board = cv.aruco.CharucoBoard((GRID_WIDTH, GRID_HEIGHT), SQUARE_WIDTH_M, MARKER_WIDTH_M, aruco_dict)
+charuco_board = cv.aruco.CharucoBoard((args.width, args.height), args.square / 0.0254, args.marker / 0.0254, aruco_dict)
 charuco_detector = cv.aruco.CharucoDetector(charuco_board)
 
 # Video capture
-video_capture = cv.VideoCapture(sys.argv[1])
+video_capture = cv.VideoCapture(args.input_video)
 frame_count = 0
 frame_shape = (0, 0)
 
@@ -44,16 +49,18 @@ while video_capture.isOpened():
 
     charuco_corners, charuco_ids, marker_corners, marker_ids = charuco_detector.detectBoard(frame_gray)
 
-    if len(charuco_ids) >= 4:
+    debug_image = frame
+
+    if charuco_ids is not None and len(charuco_ids) >= 4:
         all_corners.extend(charuco_corners)
         all_ids.extend(charuco_ids)
         all_counter.append(len(charuco_ids))
 
-    debug_image = cv.aruco.drawDetectedMarkers(frame, marker_corners, marker_ids)
-    debug_image = cv.aruco.drawDetectedCornersCharuco(debug_image, charuco_corners, charuco_ids)
+        debug_image = cv.aruco.drawDetectedMarkers(debug_image, marker_corners, marker_ids)
+        debug_image = cv.aruco.drawDetectedCornersCharuco(debug_image, charuco_corners, charuco_ids)
 
     cv.imshow("Frame", debug_image)
-    if cv.waitKey(1) == ord('q'):
+    if cv.waitKey(1) == ord("q"):
         break
 
 video_capture.release()
@@ -76,7 +83,7 @@ _, camera_matrix, dist_coeffs, r_vecs, t_vecs, std_dev_intrinsics, std_dev_extri
     cv.CALIB_RATIONAL_MODEL)
 
 # Save calibration output
-with open(sys.argv[2], "w") as f:
+with open(args.output_camera_model, "w") as f:
     camera_model = {
         "camera_matrix": camera_matrix.flatten().tolist(),
         "distortion_coefficients": dist_coeffs.flatten().tolist(),
