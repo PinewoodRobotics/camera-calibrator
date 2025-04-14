@@ -3,25 +3,35 @@ import json
 
 import cv2 as cv
 import numpy as np
+from tqdm import tqdm
 
 # Parse CLI arguments
 arg_parser = argparse.ArgumentParser(prog="calibrate")
-arg_parser.add_argument("input_video", help="path to input video")
-arg_parser.add_argument("output_camera_model", help="path to camera model")
-arg_parser.add_argument("--square", help="width of square in inches", type=float)
-arg_parser.add_argument("--marker", help="width of marker in inches", type=float)
+arg_parser.add_argument("--port", help="port of input camera", type=int)
+arg_parser.add_argument("--output_file_path", help="path to output file", type=str)
+arg_parser.add_argument("--square_size", help="width of square in meters", type=float)
+arg_parser.add_argument("--marker_size", help="width of marker in meters", type=float)
 arg_parser.add_argument("--width", help="width of board", type=int)
 arg_parser.add_argument("--height", help="height of board", type=int)
+arg_parser.add_argument("--limit_fps", help="limit fps", type=bool, default=False)
+arg_parser.add_argument("--fps", help="fps", type=int, default=50)
+
+arg_parser.add_argument("--resolution_width", help="resolution width", type=int, default=640)
+arg_parser.add_argument("--resolution_height", help="resolution height", type=int, default=480)
 
 args = arg_parser.parse_args()
 
 # Aruco Board
 aruco_dict = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_5X5_1000)
-charuco_board = cv.aruco.CharucoBoard((args.width, args.height), args.square / 0.0254, args.marker / 0.0254, aruco_dict)
+charuco_board = cv.aruco.CharucoBoard((args.width, args.height), args.square_size, args.marker_size, aruco_dict)
 charuco_detector = cv.aruco.CharucoDetector(charuco_board)
 
 # Video capture
-video_capture = cv.VideoCapture(args.input_video)
+video_capture = cv.VideoCapture(args.port)
+video_capture.set(cv.CAP_PROP_FRAME_WIDTH, args.resolution_width)
+video_capture.set(cv.CAP_PROP_FRAME_HEIGHT, args.resolution_height)
+video_capture.set(cv.CAP_PROP_FPS, args.fps)
+
 frame_count = 0
 frame_shape = (0, 0)
 
@@ -39,7 +49,7 @@ while video_capture.isOpened():
     # Limit FPS
     frame_count += 1
 
-    if frame_count % 15 != 0:
+    if args.limit_fps and frame_count % 15 != 0:
         continue
 
     # Detect
@@ -59,6 +69,9 @@ while video_capture.isOpened():
         debug_image = cv.aruco.drawDetectedMarkers(debug_image, marker_corners, marker_ids)
         debug_image = cv.aruco.drawDetectedCornersCharuco(debug_image, charuco_corners, charuco_ids)
 
+    cv.putText(debug_image, f"Images captured: {len(all_counter)}", (10, 30), 
+               cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
     cv.imshow("Frame", debug_image)
     if cv.waitKey(1) == ord("q"):
         break
@@ -67,6 +80,7 @@ video_capture.release()
 cv.destroyAllWindows()
 
 # Calibrate
+print("Calibrating camera...")
 _, camera_matrix, dist_coeffs, r_vecs, t_vecs, std_dev_intrinsics, std_dev_extrinsics, per_view_errors = cv.aruco.calibrateCameraArucoExtended(
     np.array(all_corners),
     np.array(all_ids),
@@ -83,7 +97,8 @@ _, camera_matrix, dist_coeffs, r_vecs, t_vecs, std_dev_intrinsics, std_dev_extri
     cv.CALIB_RATIONAL_MODEL)
 
 # Save calibration output
-with open(args.output_camera_model, "w") as f:
+print("Saving calibration results...")
+with open(args.output_file_path, "w") as f:
     camera_model = {
         "camera_matrix": camera_matrix.flatten().tolist(),
         "distortion_coefficients": dist_coeffs.flatten().tolist(),
@@ -92,3 +107,4 @@ with open(args.output_camera_model, "w") as f:
     }
 
     f.write(json.dumps(camera_model, indent=4))
+print("Calibration complete!")
