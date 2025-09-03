@@ -3,7 +3,6 @@ import json
 
 import cv2 as cv
 import numpy as np
-from tqdm import tqdm
 
 # Parse CLI arguments
 arg_parser = argparse.ArgumentParser(prog="calibrate")
@@ -93,8 +92,10 @@ _, camera_matrix, dist_coeffs, r_vecs, t_vecs, std_dev_intrinsics, std_dev_extri
     np.array([]),
     np.array([]),
     np.array([]),
-    np.array([]),
-    cv.CALIB_RATIONAL_MODEL)
+    np.array([])
+)
+
+dist_coeffs = dist_coeffs.flatten()[:5].reshape(1, 5)
 
 # Save calibration output
 print("Saving calibration results...")
