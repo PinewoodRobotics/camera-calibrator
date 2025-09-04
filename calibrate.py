@@ -5,22 +5,42 @@ import cv2 as cv
 import platform
 import numpy as np
 import sys
-from cscore import CameraServer
+from cscore import CameraServer, VideoMode
+import time
 
 
 class OpenCvFrameReader:
     """Reads frames using OpenCV VideoCapture with configured resolution."""
 
-    def __init__(self, port: int, resolution_width: int, resolution_height: int):
+    def __init__(
+        self,
+        port: int,
+        resolution_width: int,
+        resolution_height: int,
+        set_fps: bool,
+        requested_fps: int,
+    ):
         self.port = port
         self.resolution_width = resolution_width
         self.resolution_height = resolution_height
+        self.set_fps = set_fps
+        self.requested_fps = requested_fps
         self.video_capture = None
 
     def open(self) -> None:
         self.video_capture = cv.VideoCapture(self.port)
+        # Prefer MJPG to reduce USB bandwidth and increase achievable FPS
+        try:
+            self.video_capture.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*"MJPG"))
+        except Exception:
+            pass
         self.video_capture.set(cv.CAP_PROP_FRAME_WIDTH, self.resolution_width)
         self.video_capture.set(cv.CAP_PROP_FRAME_HEIGHT, self.resolution_height)
+        if self.set_fps:
+            try:
+                self.video_capture.set(cv.CAP_PROP_FPS, float(self.requested_fps))
+            except Exception:
+                pass
 
     def frames(self):
         if self.video_capture is None:
@@ -58,6 +78,7 @@ class WpilibFrameReader:
     def open(self) -> None:
         camera = CameraServer.startAutomaticCapture(dev=self.port)
         camera.setResolution(self.resolution_width, self.resolution_height)
+
         if self.set_fps:
             camera.setFPS(self.requested_fps)
         else:
@@ -99,12 +120,22 @@ class CharucoCapture:
         all_corners = []
         all_ids = []
         all_counter = []
+        prev_time = None
+        fps = 0.0
 
         try:
             for frame in frame_source.frames():
                 frame_count += 1
                 if self.limit_fps and frame_count % 15 != 0:
                     continue
+
+                now = time.time()
+                if prev_time is not None:
+                    instant_fps = 1.0 / max(now - prev_time, 1e-6)
+                    fps = fps * 0.9 + instant_fps * 0.1
+                else:
+                    fps = 0.0
+                prev_time = now
 
                 frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
                 frame_shape = frame_gray.shape
@@ -141,6 +172,16 @@ class CharucoCapture:
                     debug_image,
                     f"Resolution: {frame_shape[1]}x{frame_shape[0]}",
                     (10, 60),
+                    cv.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    2,
+                )
+
+                cv.putText(
+                    debug_image,
+                    f"FPS: {fps:.1f}",
+                    (10, 90),
                     cv.FONT_HERSHEY_SIMPLEX,
                     0.5,
                     (0, 255, 0),
@@ -209,6 +250,8 @@ frame_reader = (
         port=args.port,
         resolution_width=args.resolution_width,
         resolution_height=args.resolution_height,
+        set_fps=args.set_fps,
+        requested_fps=args.fps,
     )
 )
 
